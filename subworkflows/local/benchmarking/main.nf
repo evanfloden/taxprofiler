@@ -76,8 +76,8 @@ process EVALUATE_PROFILE {
     val tools_used
 
     output:
-    tuple val(meta), path("metrics.json"), emit: metrics
-    path "versions.yml",                   emit: versions
+    tuple val(meta), path("${meta.id}.metrics.json"), emit: metrics
+    path "versions.yml",                              emit: versions
 
     when:
     task.ext.when == null || task.ext.when
@@ -89,7 +89,7 @@ process EVALUATE_PROFILE {
         --truth ${truth_profile} \\
         --sample ${meta.id} \\
         --tools "${tools_used}" \\
-        --output metrics.json
+        --output ${meta.id}.metrics.json
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -100,7 +100,7 @@ process EVALUATE_PROFILE {
 
     stub:
     """
-    cat <<-END_JSON > metrics.json
+    cat <<-END_JSON > ${meta.id}.metrics.json
     {
         "sample": "${meta.id}",
         "tool_combination": "${tools_used}",

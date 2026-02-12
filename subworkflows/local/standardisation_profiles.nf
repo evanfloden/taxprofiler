@@ -175,7 +175,7 @@ workflow STANDARDISATION_PROFILES {
     ch_versions = ch_versions.mix(GANON_TABLE.out.versions)
 
     emit:
-    taxpasta = TAXPASTA_MERGE.out.merged_profiles
+    taxpasta = TAXPASTA_MERGE.out.merged_profiles.mix(TAXPASTA_STANDARDISE.out.standardised_profile)
     versions = ch_versions
     mqc      = ch_multiqc_files
 }

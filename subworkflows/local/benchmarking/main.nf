@@ -123,6 +123,61 @@ process EVALUATE_PROFILE {
     """
 }
 
+process AGGREGATE_METRICS {
+    label 'process_single'
+
+    conda "conda-forge::python=3.12"
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/python:3.12' :
+        'quay.io/biocontainers/python:3.12' }"
+
+    input:
+    path metrics_files
+
+    output:
+    path "metrics.json", emit: metrics
+    path "versions.yml", emit: versions
+
+    when:
+    task.ext.when == null || task.ext.when
+
+    script:
+    """
+    aggregate_metrics.py \\
+        ${metrics_files} \\
+        --output metrics.json
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        python: \$(python3 --version 2>&1 | sed 's/Python //')
+        aggregate_metrics: 1.0.0
+    END_VERSIONS
+    """
+
+    stub:
+    """
+    cat <<-END_JSON > metrics.json
+    {
+        "per_tool_metrics": [],
+        "summary": {
+            "weighted_f1": 0.0,
+            "species_precision": 0.0,
+            "species_recall": 0.0,
+            "species_f1": 0.0,
+            "objective_rank": "species",
+            "aggregation": "best_of_n"
+        }
+    }
+    END_JSON
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        python: \$(python3 --version 2>&1 | sed 's/Python //')
+        aggregate_metrics: 1.0.0
+    END_VERSIONS
+    """
+}
+
 workflow BENCHMARKING {
     take:
     taxpasta_profiles   // channel: [ val(meta), path(taxpasta_tsv) ] - standardised profiles from TAXPASTA
@@ -140,7 +195,7 @@ workflow BENCHMARKING {
     )
     ch_versions = ch_versions.mix(CONVERT_TO_BIOBOXES.out.versions.first())
 
-    // Step 2: Evaluate profile against gold standard
+    // Step 2: Evaluate each profile against gold standard
     EVALUATE_PROFILE(
         CONVERT_TO_BIOBOXES.out.profile,
         truth_profile,
@@ -148,7 +203,16 @@ workflow BENCHMARKING {
     )
     ch_versions = ch_versions.mix(EVALUATE_PROFILE.out.versions.first())
 
+    // Step 3: Aggregate per-tool metrics into single summary for Stimulus
+    ch_all_metrics = EVALUATE_PROFILE.out.metrics
+        .map { _meta, metrics_file -> metrics_file }
+        .collect()
+
+    AGGREGATE_METRICS(ch_all_metrics)
+    ch_versions = ch_versions.mix(AGGREGATE_METRICS.out.versions)
+
     emit:
-    metrics  = EVALUATE_PROFILE.out.metrics   // channel: [ val(meta), path(metrics.json) ]
-    versions = ch_versions                     // channel: [ path(versions.yml) ]
+    per_tool_metrics = EVALUATE_PROFILE.out.metrics      // channel: [ val(meta), path(metrics.json) ]
+    metrics          = AGGREGATE_METRICS.out.metrics      // path: aggregated metrics.json
+    versions         = ch_versions                        // channel: [ path(versions.yml) ]
 }

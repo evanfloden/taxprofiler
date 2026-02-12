@@ -881,6 +881,36 @@
                     "description": "Display hidden parameters in the help message (only works when --help or --help_full are provided)."
                 }
             }
+        },
+        "benchmarking_options": {
+            "title": "Benchmarking",
+            "type": "object",
+            "description": "Compare taxonomic profiles against a gold standard using OPAL",
+            "fa_icon": "fas fa-chart-bar",
+            "properties": {
+                "benchmark": {
+                    "type": "boolean",
+                    "fa_icon": "fas fa-check-double",
+                    "description": "Enable benchmarking against a truth profile",
+                    "help_text": "When enabled, TAXPASTA standardised profiles are compared against a gold standard profile using OPAL. Requires --truth_profile and --benchmark_taxdump. Produces a JSON metrics file suitable for optimization with the stimulus framework."
+                },
+                "truth_profile": {
+                    "type": "string",
+                    "format": "file-path",
+                    "exists": true,
+                    "fa_icon": "fas fa-file",
+                    "description": "Path to gold standard profile in CAMI Bioboxes format",
+                    "help_text": "Path to a gold standard taxonomic profile, e.g., from the CAMI challenge. Required when --benchmark is true."
+                },
+                "benchmark_taxdump": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "exists": true,
+                    "fa_icon": "fas fa-folder",
+                    "description": "Path to NCBI taxonomy dump directory",
+                    "help_text": "Path to directory containing names.dmp and nodes.dmp from the NCBI taxonomy dump. Required for converting TAXPASTA output to CAMI Bioboxes format for OPAL evaluation."
+                }
+            }
         }
     },
     "allOf": [
@@ -910,6 +940,9 @@
         },
         {
             "$ref": "#/$defs/postprocessing_and_visualisation_options"
+        },
+        {
+            "$ref": "#/$defs/benchmarking_options"
         },
         {
             "$ref": "#/$defs/institutional_config_options"

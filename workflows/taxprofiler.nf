@@ -29,6 +29,7 @@ include { SHORTREAD_COMPLEXITYFILTERING } from '../subworkflows/local/shortread_
 include { PROFILING                     } from '../subworkflows/local/profiling'
 include { VISUALIZATION_KRONA           } from '../subworkflows/local/visualization_krona'
 include { STANDARDISATION_PROFILES      } from '../subworkflows/local/standardisation_profiles'
+include { BENCHMARKING                  } from '../subworkflows/local/benchmarking'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -296,6 +297,37 @@ workflow TAXPROFILER {
     if (params.run_profile_standardisation) {
         STANDARDISATION_PROFILES(PROFILING.out.classifications, PROFILING.out.profiles, ch_final_dbs, PROFILING.out.motus_version)
         ch_versions = ch_versions.mix(STANDARDISATION_PROFILES.out.versions)
+    }
+
+    /*
+        SUBWORKFLOW: BENCHMARKING
+    */
+    if (params.benchmark && params.run_profile_standardisation) {
+        // Build list of active tools for labeling
+        def active_tools = []
+        if (params.run_kraken2) active_tools.add('kraken2')
+        if (params.run_bracken) active_tools.add('bracken')
+        if (params.run_centrifuge) active_tools.add('centrifuge')
+        if (params.run_metaphlan) active_tools.add('metaphlan')
+        if (params.run_kaiju) active_tools.add('kaiju')
+        if (params.run_diamond) active_tools.add('diamond')
+        if (params.run_motus) active_tools.add('motus')
+        if (params.run_krakenuniq) active_tools.add('krakenuniq')
+        if (params.run_kmcp) active_tools.add('kmcp')
+        if (params.run_ganon) active_tools.add('ganon')
+        if (params.run_malt) active_tools.add('malt')
+        def tools_str = active_tools.join(',')
+
+        ch_truth_profile = params.truth_profile ? file(params.truth_profile, checkIfExists: true) : []
+        ch_taxdump_dir = params.benchmark_taxdump ? Channel.fromPath(params.benchmark_taxdump, checkIfExists: true).collect() : []
+
+        BENCHMARKING(
+            STANDARDISATION_PROFILES.out.taxpasta,
+            ch_truth_profile,
+            ch_taxdump_dir,
+            tools_str,
+        )
+        ch_versions = ch_versions.mix(BENCHMARKING.out.versions)
     }
 
     /*

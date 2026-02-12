@@ -29,7 +29,7 @@ include { SHORTREAD_COMPLEXITYFILTERING } from '../subworkflows/local/shortread_
 include { PROFILING                     } from '../subworkflows/local/profiling'
 include { VISUALIZATION_KRONA           } from '../subworkflows/local/visualization_krona'
 include { STANDARDISATION_PROFILES      } from '../subworkflows/local/standardisation_profiles'
-include { BENCHMARKING                  } from '../subworkflows/local/benchmarking'
+include { BENCHMARKING; FALLBACK_METRICS } from '../subworkflows/local/benchmarking'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -302,7 +302,7 @@ workflow TAXPROFILER {
     /*
         SUBWORKFLOW: BENCHMARKING
     */
-    if (params.benchmark && params.run_profile_standardisation) {
+    if (params.benchmark) {
         // Build list of active tools for labeling
         def active_tools = []
         if (params.run_kraken2) active_tools.add('kraken2')
@@ -316,18 +316,23 @@ workflow TAXPROFILER {
         if (params.run_kmcp) active_tools.add('kmcp')
         if (params.run_ganon) active_tools.add('ganon')
         if (params.run_malt) active_tools.add('malt')
-        def tools_str = active_tools.join(',')
+        def tools_str = active_tools.join(',') ?: 'none'
 
-        ch_truth_profile = params.truth_profile ? file(params.truth_profile, checkIfExists: true) : []
-        ch_taxdump_dir = params.benchmark_taxdump ? Channel.fromPath(params.benchmark_taxdump, checkIfExists: true).collect() : []
+        if (params.run_profile_standardisation && active_tools.size() > 0) {
+            ch_truth_profile = params.truth_profile ? file(params.truth_profile, checkIfExists: true) : []
+            ch_taxdump_dir = params.benchmark_taxdump ? Channel.fromPath(params.benchmark_taxdump, checkIfExists: true).collect() : []
 
-        BENCHMARKING(
-            STANDARDISATION_PROFILES.out.taxpasta,
-            ch_truth_profile,
-            ch_taxdump_dir,
-            tools_str,
-        )
-        ch_versions = ch_versions.mix(BENCHMARKING.out.versions)
+            BENCHMARKING(
+                STANDARDISATION_PROFILES.out.taxpasta,
+                ch_truth_profile,
+                ch_taxdump_dir,
+                tools_str,
+            )
+            ch_versions = ch_versions.mix(BENCHMARKING.out.versions)
+        } else {
+            // No profiling tools enabled — produce fallback zero metrics
+            FALLBACK_METRICS(tools_str)
+        }
     }
 
     /*

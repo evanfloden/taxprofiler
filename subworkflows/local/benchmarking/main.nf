@@ -178,6 +178,37 @@ process AGGREGATE_METRICS {
     """
 }
 
+process FALLBACK_METRICS {
+    label 'process_single'
+
+    input:
+    val tools_used
+
+    output:
+    path "metrics.json", emit: metrics
+
+    script:
+    """
+    cat <<-END_JSON > metrics.json
+    {
+        "tools_evaluated": [],
+        "tool_combination": "${tools_used}",
+        "num_profiles": 0,
+        "per_tool_metrics": [],
+        "summary": {
+            "weighted_f1": 0.0,
+            "species_precision": 0.0,
+            "species_recall": 0.0,
+            "species_f1": 0.0,
+            "objective_rank": "none",
+            "aggregation": "fallback",
+            "best_tool": "none"
+        }
+    }
+    END_JSON
+    """
+}
+
 workflow BENCHMARKING {
     take:
     taxpasta_profiles   // channel: [ val(meta), path(taxpasta_tsv) ] - standardised profiles from TAXPASTA

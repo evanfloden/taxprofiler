@@ -181,6 +181,11 @@ process AGGREGATE_METRICS {
 process FALLBACK_METRICS {
     label 'process_single'
 
+    conda "conda-forge::python=3.12"
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://depot.galaxyproject.org/singularity/python:3.12' :
+        'quay.io/biocontainers/python:3.12' }"
+
     input:
     val tools_used
 

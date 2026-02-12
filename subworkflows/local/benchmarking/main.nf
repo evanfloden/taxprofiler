@@ -2,7 +2,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     BENCHMARKING SUBWORKFLOW
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Compares taxonomic profiles against a gold standard using OPAL.
+    Compares taxonomic profiles against a gold standard.
     Produces a JSON metrics file consumed by the stimulus optimization framework.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -61,70 +61,7 @@ process CONVERT_TO_BIOBOXES {
     """
 }
 
-process BENCHMARK_OPAL {
-    tag "$meta.id"
-    label 'process_low'
-
-    conda "bioconda::cami-opal=1.0.14"
-    container "community.wave.seqera.io/library/cami-opal:23aa9c620f30c4b3"
-
-    input:
-    tuple val(meta), path(query_profile)
-    path truth_profile
-
-    output:
-    tuple val(meta), path("opal_results/"), emit: results
-    path "versions.yml",                    emit: versions
-
-    when:
-    task.ext.when == null || task.ext.when
-
-    script:
-    def prefix = task.ext.prefix ?: "${meta.id}"
-    """
-    mkdir -p opal_results
-
-    opal.py \\
-        -g ${truth_profile} \\
-        ${query_profile} \\
-        -l "${meta.id}" \\
-        -o opal_results/ \\
-    || true
-
-    # If OPAL failed, create a minimal results.tsv with zero metrics
-    if [ ! -f opal_results/results.tsv ]; then
-        mkdir -p opal_results
-        printf "tool\\trank\\tmetric\\tvalue\\n" > opal_results/results.tsv
-        printf "${meta.id}\\tspecies\\tpurity (precision)\\t0.0\\n" >> opal_results/results.tsv
-        printf "${meta.id}\\tspecies\\tcompleteness (recall)\\t0.0\\n" >> opal_results/results.tsv
-        printf "${meta.id}\\tspecies\\tF1 score\\t0.0\\n" >> opal_results/results.tsv
-        printf "${meta.id}\\tspecies\\tL1 norm error\\t2.0\\n" >> opal_results/results.tsv
-        printf "${meta.id}\\tspecies\\tWeighted UniFrac error\\t16.0\\n" >> opal_results/results.tsv
-    fi
-
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        opal: \$(opal.py --version 2>&1 | grep -oP '\\d+\\.\\d+\\.\\d+' || echo '1.0.14')
-    END_VERSIONS
-    """
-
-    stub:
-    def prefix = task.ext.prefix ?: "${meta.id}"
-    """
-    mkdir -p opal_results
-    printf "tool\\trank\\tmetric\\tvalue\\n" > opal_results/results.tsv
-    printf "${meta.id}\\tspecies\\tpurity (precision)\\t0.85\\n" >> opal_results/results.tsv
-    printf "${meta.id}\\tspecies\\tcompleteness (recall)\\t0.80\\n" >> opal_results/results.tsv
-    printf "${meta.id}\\tspecies\\tF1 score\\t0.824\\n" >> opal_results/results.tsv
-
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        opal: 1.0.14
-    END_VERSIONS
-    """
-}
-
-process EXTRACT_METRICS {
+process EVALUATE_PROFILE {
     tag "$meta.id"
     label 'process_single'
 
@@ -134,7 +71,8 @@ process EXTRACT_METRICS {
         'quay.io/biocontainers/python:3.12' }"
 
     input:
-    tuple val(meta), path(opal_results)
+    tuple val(meta), path(query_profile)
+    path truth_profile
     val tools_used
 
     output:
@@ -146,8 +84,9 @@ process EXTRACT_METRICS {
 
     script:
     """
-    extract_metrics.py \\
-        --opal-results ${opal_results} \\
+    evaluate_profile.py \\
+        --prediction ${query_profile} \\
+        --truth ${truth_profile} \\
         --sample ${meta.id} \\
         --tools "${tools_used}" \\
         --output metrics.json
@@ -155,7 +94,7 @@ process EXTRACT_METRICS {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         python: \$(python3 --version 2>&1 | sed 's/Python //')
-        extract_metrics: 1.0.0
+        evaluate_profile: 1.0.0
     END_VERSIONS
     """
 
@@ -179,7 +118,7 @@ process EXTRACT_METRICS {
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         python: \$(python3 --version 2>&1 | sed 's/Python //')
-        extract_metrics: 1.0.0
+        evaluate_profile: 1.0.0
     END_VERSIONS
     """
 }
@@ -201,21 +140,15 @@ workflow BENCHMARKING {
     )
     ch_versions = ch_versions.mix(CONVERT_TO_BIOBOXES.out.versions.first())
 
-    // Step 2: Run OPAL evaluation against gold standard
-    BENCHMARK_OPAL(
+    // Step 2: Evaluate profile against gold standard
+    EVALUATE_PROFILE(
         CONVERT_TO_BIOBOXES.out.profile,
         truth_profile,
-    )
-    ch_versions = ch_versions.mix(BENCHMARK_OPAL.out.versions.first())
-
-    // Step 3: Extract metrics from OPAL output
-    EXTRACT_METRICS(
-        BENCHMARK_OPAL.out.results,
         tools_used,
     )
-    ch_versions = ch_versions.mix(EXTRACT_METRICS.out.versions.first())
+    ch_versions = ch_versions.mix(EVALUATE_PROFILE.out.versions.first())
 
     emit:
-    metrics  = EXTRACT_METRICS.out.metrics   // channel: [ val(meta), path(metrics.json) ]
-    versions = ch_versions                    // channel: [ path(versions.yml) ]
+    metrics  = EVALUATE_PROFILE.out.metrics   // channel: [ val(meta), path(metrics.json) ]
+    versions = ch_versions                     // channel: [ path(versions.yml) ]
 }
